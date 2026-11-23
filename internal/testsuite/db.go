@@ -4,36 +4,66 @@ package testsuite
 import (
 	"errors"
 	"fmt"
+	"log"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/dembygenesis/spine/internal/migration"
 	"github.com/dembygenesis/spine/pkg/pg"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
 
-// UseDB connects to the container's database and brings its schema up to date.
-// Every test that calls it shares that one database.
+// UseDB gives the calling test a database of its own: created empty, migrated,
+// and dropped when the test ends. No two tests ever see each other's rows.
 func UseDB(t *testing.T) *sqlx.DB {
 	t.Helper()
+	started := time.Now()
 
 	c, err := pg.GetContainer()
 	if err != nil {
 		t.Fatalf("test container: %v", err)
 	}
 
-	db, err := sqlx.Connect("postgres", c.Config.DSN(c.Config.Database))
+	// The admin connection sits on the container's default database, because
+	// Postgres cannot create or drop the database a session is connected to.
+	admin, err := sqlx.Connect("postgres", c.Config.DSN(c.Config.Database))
 	if err != nil {
-		t.Fatalf("connect: %v", err)
+		t.Fatalf("connect admin: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
 
-	if err := runMigrations(db, c.Config.Database); err != nil {
-		t.Fatalf("migrate: %v", err)
+	// Postgres identifiers cannot contain hyphens.
+	name := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err := admin.Exec(`CREATE DATABASE "` + name + `"`); err != nil {
+		_ = admin.Close()
+		t.Fatalf("create %s: %v", name, err)
 	}
+
+	db, err := sqlx.Connect("postgres", c.Config.DSN(name))
+	if err != nil {
+		_ = admin.Close()
+		t.Fatalf("connect %s: %v", name, err)
+	}
+	if err := runMigrations(db, name); err != nil {
+		_ = db.Close()
+		_ = admin.Close()
+		t.Fatalf("migrate %s: %v", name, err)
+	}
+	log.Printf("[testsuite] provisioned %s in %s", name, time.Since(started).Round(time.Millisecond))
+
+	t.Cleanup(func() {
+		_ = db.Close()
+		// golang-migrate keeps a connection of its own that closing db does not
+		// reach, and Postgres refuses to drop a database with sessions attached.
+		_, _ = admin.Exec(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, name)
+		_, _ = admin.Exec(`DROP DATABASE "` + name + `"`)
+		_ = admin.Close()
+	})
 	return db
 }
 
