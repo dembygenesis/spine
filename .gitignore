@@ -1,0 +1,6 @@
+# local build output
+/bin/
+# editor state
+.idea/
+.vscode/
+.DS_Store
