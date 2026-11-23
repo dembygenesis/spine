@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/dembygenesis/spine/internal/migration"
-	"github.com/dembygenesis/spine/pkg/pg"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -30,7 +29,8 @@ func (h *Helper) UseBackendDB() func() {
 	t.Helper()
 	started := time.Now()
 
-	c, err := pg.GetContainer()
+	// Which container this test lands on is the pool's decision: see pool.go.
+	c, err := dbPool.next()
 	if err != nil {
 		t.Fatalf("test container: %v", err)
 	}
