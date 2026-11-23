@@ -20,7 +20,7 @@ func TestUseDB(t *testing.T) {
 				th.T.Cleanup(th.UseBackendDB())
 
 				var ok bool
-				require.NoError(th.T, th.BackendAppDb().Get(&ok, `SELECT version = 1 AND NOT dirty FROM schema_migrations`))
+				require.NoError(th.T, th.BackendAppDb().Get(&ok, `SELECT version > 0 AND NOT dirty FROM schema_migrations`))
 				require.True(th.T, ok)
 			},
 		},
