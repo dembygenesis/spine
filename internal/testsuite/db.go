@@ -19,8 +19,9 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// UseDB gives the calling test a database of its own: created empty, migrated,
-// and dropped when the test ends. No two tests ever see each other's rows.
+// UseDB gives the calling test a database of its own, cloned from the migrated
+// template and dropped when the test ends. No two tests ever see each other's
+// rows, and no test pays for the migrations.
 func UseDB(t *testing.T) *sqlx.DB {
 	t.Helper()
 	started := time.Now()
@@ -37,9 +38,15 @@ func UseDB(t *testing.T) *sqlx.DB {
 		t.Fatalf("connect admin: %v", err)
 	}
 
+	template, err := ensureTemplate(admin, c.Config)
+	if err != nil {
+		_ = admin.Close()
+		t.Fatalf("template: %v", err)
+	}
+
 	// Postgres identifiers cannot contain hyphens.
 	name := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if _, err := admin.Exec(`CREATE DATABASE "` + name + `"`); err != nil {
+	if _, err := admin.Exec(`CREATE DATABASE "` + name + `" TEMPLATE "` + template + `"`); err != nil {
 		_ = admin.Close()
 		t.Fatalf("create %s: %v", name, err)
 	}
@@ -49,17 +56,12 @@ func UseDB(t *testing.T) *sqlx.DB {
 		_ = admin.Close()
 		t.Fatalf("connect %s: %v", name, err)
 	}
-	if err := runMigrations(db, name); err != nil {
-		_ = db.Close()
-		_ = admin.Close()
-		t.Fatalf("migrate %s: %v", name, err)
-	}
 	log.Printf("[testsuite] provisioned %s in %s", name, time.Since(started).Round(time.Millisecond))
 
 	t.Cleanup(func() {
 		_ = db.Close()
-		// golang-migrate keeps a connection of its own that closing db does not
-		// reach, and Postgres refuses to drop a database with sessions attached.
+		// Postgres refuses to drop a database with sessions attached, and a test
+		// may have left one open.
 		_, _ = admin.Exec(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, name)
 		_, _ = admin.Exec(`DROP DATABASE "` + name + `"`)
 		_ = admin.Close()
