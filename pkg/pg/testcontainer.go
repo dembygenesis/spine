@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -37,10 +38,18 @@ func init() {
 	}
 }
 
-// ContainerName is the fixed name of the shared test container. A fixed name is
-// what lets every test binary in a run attach to one container instead of
-// starting its own.
+// ContainerName is the fixed name of the first shared test container. A fixed
+// name is what lets every test binary in a run attach to one container instead
+// of starting its own.
 const ContainerName = "spine-test-pg"
+
+// containerName is the name of container n: spine-test-pg, spine-test-pg-1, ...
+func containerName(n int) string {
+	if n == 0 {
+		return ContainerName
+	}
+	return ContainerName + "-" + strconv.Itoa(n)
+}
 
 // ContainerConfig is how to reach the test container.
 type ContainerConfig struct {
@@ -63,30 +72,58 @@ type TestContainer struct {
 	Config    *ContainerConfig
 }
 
+// One sync.Once per container index: container 2 may be wanted long after
+// container 0 started, and each must start exactly once however many parallel
+// tests ask for it at the same moment.
 var (
-	containerOnce sync.Once
-	container     *TestContainer
-	containerErr  error
+	slotsMu sync.Mutex
+	slots   = map[int]*slot{}
 )
 
-// GetContainer returns the shared test container, starting it on first use.
+type slot struct {
+	once      sync.Once
+	container *TestContainer
+	err       error
+}
+
+func slotFor(n int) *slot {
+	slotsMu.Lock()
+	defer slotsMu.Unlock()
+	if s, ok := slots[n]; ok {
+		return s
+	}
+	s := &slot{}
+	slots[n] = s
+	return s
+}
+
+// GetContainer returns the first shared test container, starting it on first
+// use.
+func GetContainer() (*TestContainer, error) {
+	return GetContainerN(0)
+}
+
+// GetContainerN returns container n, starting it on first use.
 //
 // sync.Once makes parallel tests in one binary share a single start. Reuse makes
 // other binaries in the same run (go test runs one per package) attach to the
-// container by name rather than racing to start their own.
-func GetContainer() (*TestContainer, error) {
-	containerOnce.Do(func() {
-		container, containerErr = startContainer()
+// container by name rather than racing to start their own, so n counts
+// containers for the whole run, not per package.
+func GetContainerN(n int) (*TestContainer, error) {
+	s := slotFor(n)
+	s.once.Do(func() {
+		s.container, s.err = startContainer(n)
 	})
-	return container, containerErr
+	return s.container, s.err
 }
 
-func startContainer() (*TestContainer, error) {
+func startContainer(n int) (*TestContainer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
+	name := containerName(n)
 	req := testcontainers.ContainerRequest{
-		Name:         ContainerName,
+		Name:         name,
 		Image:        "postgres:15-alpine",
 		ExposedPorts: []string{"5432/tcp"},
 		Env: map[string]string{
@@ -119,7 +156,7 @@ func startContainer() (*TestContainer, error) {
 		Reuse:            true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("start %s: %w", ContainerName, err)
+		return nil, fmt.Errorf("start %s: %w", name, err)
 	}
 
 	host, err := c.Host(ctx)
