@@ -41,15 +41,14 @@ func TestUseDB(t *testing.T) {
 			},
 		},
 		{
-			name: "success-database-is-dropped-after-the-test",
+			name: "success-cleanup-drops-the-database",
 			assert: func(th *testsuite.Helper) {
+				drop := th.UseBackendDB()
 				var name string
-				th.T.Run("inner", func(t *testing.T) {
-					inner := testsuite.New(t)
-					t.Cleanup(inner.UseBackendDB())
-					require.NoError(t, inner.BackendAppDb().Get(&name, `SELECT current_database()`))
-				})
-				require.False(th.T, databaseExists(th.T, name), "database %s outlived its test", name)
+				require.NoError(th.T, th.BackendAppDb().Get(&name, `SELECT current_database()`))
+
+				drop()
+				require.False(th.T, databaseExists(th.T, name), "database %s outlived its cleanup", name)
 			},
 		},
 		{
