@@ -12,71 +12,72 @@ import (
 func TestUseDB(t *testing.T) {
 	tests := []struct {
 		name   string
-		assert func(t *testing.T)
+		assert func(th *testsuite.Helper)
 	}{
 		{
 			name: "success-schema-is-migrated",
-			assert: func(t *testing.T) {
-				db := testsuite.UseDB(t)
+			assert: func(th *testsuite.Helper) {
+				th.T.Cleanup(th.UseBackendDB())
 
 				var ok bool
-				require.NoError(t, db.Get(&ok, `SELECT version = 1 AND NOT dirty FROM schema_migrations`))
-				require.True(t, ok)
+				require.NoError(th.T, th.BackendAppDb().Get(&ok, `SELECT version = 1 AND NOT dirty FROM schema_migrations`))
+				require.True(th.T, ok)
 			},
 		},
 		{
 			name: "success-parallel-tests-see-only-their-own-rows",
-			assert: func(t *testing.T) {
-				db := testsuite.UseDB(t)
-				insertAcme(t, db)
-				require.Equal(t, 1, countOrganizations(t, db))
+			assert: func(th *testsuite.Helper) {
+				th.T.Cleanup(th.UseBackendDB())
+				insertAcme(th)
+				require.Equal(th.T, 1, countOrganizations(th))
 			},
 		},
 		{
 			name: "success-the-same-row-again-in-another-test",
-			assert: func(t *testing.T) {
-				db := testsuite.UseDB(t)
-				insertAcme(t, db)
-				require.Equal(t, 1, countOrganizations(t, db))
+			assert: func(th *testsuite.Helper) {
+				th.T.Cleanup(th.UseBackendDB())
+				insertAcme(th)
+				require.Equal(th.T, 1, countOrganizations(th))
 			},
 		},
 		{
 			name: "success-database-is-dropped-after-the-test",
-			assert: func(t *testing.T) {
+			assert: func(th *testsuite.Helper) {
 				var name string
-				t.Run("inner", func(t *testing.T) {
-					db := testsuite.UseDB(t)
-					require.NoError(t, db.Get(&name, `SELECT current_database()`))
+				th.T.Run("inner", func(t *testing.T) {
+					inner := testsuite.New(t)
+					t.Cleanup(inner.UseBackendDB())
+					require.NoError(t, inner.BackendAppDb().Get(&name, `SELECT current_database()`))
 				})
-				require.False(t, databaseExists(t, name), "database %s outlived its test", name)
+				require.False(th.T, databaseExists(th.T, name), "database %s outlived its test", name)
 			},
 		},
 		{
 			name: "success-one-finished-template-no-scratch-left",
-			assert: func(t *testing.T) {
-				testsuite.UseDB(t)
-				require.Equal(t, []string{"done"}, templateStates(t))
+			assert: func(th *testsuite.Helper) {
+				th.T.Cleanup(th.UseBackendDB())
+				require.Equal(th.T, []string{"done"}, templateStates(th.T))
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			tt.assert(t)
+			tt.assert(testsuite.New(t))
 		})
 	}
 }
 
-func insertAcme(t *testing.T, db *sqlx.DB) {
-	t.Helper()
-	_, err := db.Exec(`INSERT INTO organizations (name) VALUES ('acme')`)
-	require.NoError(t, err)
+func insertAcme(th *testsuite.Helper) {
+	th.T.Helper()
+	_, err := th.BackendAppDb().Exec(`INSERT INTO organizations (name) VALUES ('acme')`)
+	require.NoError(th.T, err)
 }
 
-func countOrganizations(t *testing.T, db *sqlx.DB) int {
-	t.Helper()
+func countOrganizations(th *testsuite.Helper) int {
+	th.T.Helper()
 	var n int
-	require.NoError(t, db.Get(&n, `SELECT count(*) FROM organizations`))
+	require.NoError(th.T, th.BackendAppDb().Get(&n, `SELECT count(*) FROM organizations`))
 	return n
 }
 

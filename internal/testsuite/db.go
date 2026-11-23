@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/dembygenesis/spine/internal/migration"
@@ -19,10 +18,15 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// UseDB gives the calling test a database of its own, cloned from the migrated
-// template and dropped when the test ends. No two tests ever see each other's
-// rows, and no test pays for the migrations.
-func UseDB(t *testing.T) *sqlx.DB {
+// UseBackendDB gives the test a database of its own, cloned from the migrated
+// template, and returns the func that drops it:
+//
+//	t.Cleanup(th.UseBackendDB())
+//
+// It returns the cleanup rather than registering it so the call site shows the
+// database's lifetime, and a test can drop it early to check what dropping does.
+func (h *Helper) UseBackendDB() func() {
+	t := h.T
 	t.Helper()
 	started := time.Now()
 
@@ -58,15 +62,15 @@ func UseDB(t *testing.T) *sqlx.DB {
 	}
 	log.Printf("[testsuite] provisioned %s in %s", name, time.Since(started).Round(time.Millisecond))
 
-	t.Cleanup(func() {
+	h.db = db
+	return func() {
 		_ = db.Close()
 		// Postgres refuses to drop a database with sessions attached, and a test
 		// may have left one open.
 		_, _ = admin.Exec(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, name)
 		_, _ = admin.Exec(`DROP DATABASE "` + name + `"`)
 		_ = admin.Close()
-	})
-	return db
+	}
 }
 
 // runMigrations applies every pending up migration. Already-applied ones are
