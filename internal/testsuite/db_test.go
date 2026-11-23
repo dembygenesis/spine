@@ -51,6 +51,13 @@ func TestUseDB(t *testing.T) {
 				require.False(t, databaseExists(t, name), "database %s outlived its test", name)
 			},
 		},
+		{
+			name: "success-one-finished-template-no-scratch-left",
+			assert: func(t *testing.T) {
+				testsuite.UseDB(t)
+				require.Equal(t, []string{"done"}, templateStates(t))
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,15 +80,35 @@ func countOrganizations(t *testing.T, db *sqlx.DB) int {
 	return n
 }
 
-func databaseExists(t *testing.T, name string) bool {
+// templateStates lists every spine template on the container as "done" or
+// "building". Other runs with other migrations may leave their own templates,
+// so only the ones for the current migrations count.
+func templateStates(t *testing.T) []string {
+	t.Helper()
+	admin := adminDB(t)
+
+	var states []string
+	require.NoError(t, admin.Select(&states, `
+		SELECT CASE WHEN datname LIKE '%\_building' THEN 'building' ELSE 'done' END
+		FROM pg_database
+		WHERE datname LIKE 'spine\_tmpl\_%' AND datname LIKE '%' || $1 || '%'`,
+		testsuite.SchemaHash()))
+	return states
+}
+
+func adminDB(t *testing.T) *sqlx.DB {
 	t.Helper()
 	c, err := pg.GetContainer()
 	require.NoError(t, err)
 	admin, err := sqlx.Connect("postgres", c.Config.DSN(c.Config.Database))
 	require.NoError(t, err)
-	defer func() { _ = admin.Close() }()
+	t.Cleanup(func() { _ = admin.Close() })
+	return admin
+}
 
+func databaseExists(t *testing.T, name string) bool {
+	t.Helper()
 	var exists bool
-	require.NoError(t, admin.Get(&exists, `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, name))
+	require.NoError(t, adminDB(t).Get(&exists, `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, name))
 	return exists
 }
