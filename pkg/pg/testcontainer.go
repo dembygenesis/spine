@@ -99,6 +99,18 @@ func startContainer() (*TestContainer, error) {
 		WaitingFor: wait.ForLog("database system is ready to accept connections").
 			WithOccurrence(2).
 			WithStartupTimeout(time.Minute),
+		// The data directory lives in RAM: CREATE DATABASE ... TEMPLATE is a
+		// file copy, and disk latency is what it waits on.
+		Tmpfs: map[string]string{"/var/lib/postgresql/data": "rw,size=2g"},
+		// Every setting below is reckless in production and free here: a test
+		// database lives for a second and is dropped, so a crash loses nothing.
+		Cmd: []string{
+			"postgres",
+			"-c", "fsync=off", // never flush to disk
+			"-c", "synchronous_commit=off", // do not wait on the WAL either
+			"-c", "full_page_writes=off", // no torn-page protection needed
+			"-c", "max_connections=300", // each running test holds two
+		},
 	}
 
 	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
