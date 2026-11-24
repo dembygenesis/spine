@@ -78,7 +78,7 @@ func migrateScratch(cfg *pg.ContainerConfig, scratch string) error {
 	if err != nil {
 		return fmt.Errorf("connect scratch: %w", err)
 	}
-	if err := runMigrations(db, scratch); err != nil {
+	if err := migration.Up(db, scratch); err != nil {
 		_ = db.Close()
 		return fmt.Errorf("migrate scratch: %w", err)
 	}

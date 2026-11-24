@@ -2,16 +2,10 @@
 package testsuite
 
 import (
-	"errors"
-	"fmt"
 	"log"
 	"strings"
 	"time"
 
-	"github.com/dembygenesis/spine/internal/migration"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -71,25 +65,4 @@ func (h *Helper) UseBackendDB() func() {
 		_, _ = admin.Exec(`DROP DATABASE "` + name + `"`)
 		_ = admin.Close()
 	}
-}
-
-// runMigrations applies every pending up migration. Already-applied ones are
-// skipped, which golang-migrate reports as ErrNoChange.
-func runMigrations(db *sqlx.DB, dbName string) error {
-	src, err := iofs.New(migration.Stmts, ".")
-	if err != nil {
-		return fmt.Errorf("migration source: %w", err)
-	}
-	driver, err := postgres.WithInstance(db.DB, &postgres.Config{DatabaseName: dbName})
-	if err != nil {
-		return fmt.Errorf("postgres driver: %w", err)
-	}
-	m, err := migrate.NewWithInstance("iofs", src, dbName, driver)
-	if err != nil {
-		return fmt.Errorf("migrate instance: %w", err)
-	}
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("migrate up: %w", err)
-	}
-	return nil
 }
