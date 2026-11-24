@@ -10,7 +10,8 @@ import (
 // provisioned, its database. Anything that needs both (fixtures, factories,
 // assertions) takes a *Helper instead of two arguments that must stay paired.
 type Helper struct {
-	T *testing.T
+	T      *testing.T
+	Fakers *Fakers
 
 	db *sqlx.DB
 }
@@ -18,7 +19,7 @@ type Helper struct {
 // New starts a Helper for one test or subtest.
 func New(t *testing.T) *Helper {
 	t.Helper()
-	return &Helper{T: t}
+	return &Helper{T: t, Fakers: newFakers()}
 }
 
 // BackendAppDb is the database UseBackendDB provisioned. Calling it first is a
