@@ -3,6 +3,8 @@ package testsuite
 import (
 	"testing"
 
+	"github.com/dembygenesis/spine/internal/config"
+
 	"github.com/jmoiron/sqlx"
 )
 
@@ -13,7 +15,10 @@ type Helper struct {
 	T      *testing.T
 	Fakers *Fakers
 
-	db *sqlx.DB
+	db     *sqlx.DB
+	dbHost string
+	dbPort int
+	dbName string
 }
 
 // New starts a Helper for one test or subtest.
@@ -30,4 +35,19 @@ func (h *Helper) BackendAppDb() *sqlx.DB {
 		h.T.Fatal("BackendAppDb called before UseBackendDB")
 	}
 	return h.db
+}
+
+// AppConfig is a full app config pointed at this test's database, for tests
+// that boot the whole container. The secret is a throwaway.
+func (h *Helper) AppConfig() *config.Config {
+	h.T.Helper()
+	h.BackendAppDb()
+	return &config.Config{
+		DBHost:    h.dbHost,
+		DBPort:    h.dbPort,
+		DBUser:    "test",
+		DBPass:    "test",
+		DBName:    h.dbName,
+		JWTSecret: "test-secret-that-is-at-least-32-bytes",
+	}
 }

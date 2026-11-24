@@ -57,6 +57,7 @@ func (h *Helper) UseBackendDB() func() {
 	log.Printf("[testsuite] provisioned %s in %s", name, time.Since(started).Round(time.Millisecond))
 
 	h.db = db
+	h.dbHost, h.dbPort, h.dbName = c.Config.Host, c.Config.Port, name
 	return func() {
 		_ = db.Close()
 		// Postgres refuses to drop a database with sessions attached, and a test
