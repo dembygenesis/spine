@@ -15,6 +15,7 @@ import (
 type orgPersister interface {
 	Organizations(ctx context.Context, ex pg.Executor, f model.QueryFilterOrganization) ([]model.Organization, error)
 	Insert(ctx context.Context, ex pg.Executor, in model.InsertOrganization) (*model.Organization, error)
+	Update(ctx context.Context, ex pg.Executor, in model.UpdateOrganization) (*model.Organization, error)
 	InsertMember(ctx context.Context, ex pg.Executor, in model.InsertOrganizationMember) (*model.OrganizationMember, error)
 }
 
@@ -88,4 +89,19 @@ func (b *Business) Organization(ctx context.Context, id string) (*model.Organiza
 		return nil, model.ErrOrganizationNotFound
 	}
 	return &orgs[0], nil
+}
+
+// RenameOrganizationParams is what renaming needs.
+type RenameOrganizationParams struct {
+	ID   string
+	Name string
+}
+
+// RenameOrganization renames an organization. Who may rename is not decided
+// here: the route is gated on organization:write before this runs.
+func (b *Business) RenameOrganization(ctx context.Context, p RenameOrganizationParams) (*model.Organization, error) {
+	return b.store.Update(ctx, b.transactor.DB(), model.UpdateOrganization{
+		ID:   p.ID,
+		Name: null.StringFrom(p.Name),
+	})
 }

@@ -42,8 +42,12 @@ type OrganizationMember struct {
 // ReqCreateOrganization is the body of a create request. Huma enforces these
 // tags before the handler runs and publishes them in the OpenAPI document.
 type ReqCreateOrganization struct {
-	Name    string `json:"name" minLength:"2" maxLength:"64" doc:"Unique name of the organization" example:"acme"`
-	OwnerID string `json:"owner_id" format:"uuid" doc:"The user seated as the organization's first admin"`
+	Name string `json:"name" minLength:"2" maxLength:"64" doc:"Unique name of the organization" example:"acme"`
+}
+
+// ReqRenameOrganization is the body of a rename request.
+type ReqRenameOrganization struct {
+	Name string `json:"name" minLength:"2" maxLength:"64" doc:"The organization's new, unique name" example:"acme-labs"`
 }
 
 // InsertOrganization is what a store needs to create an organization.
@@ -56,6 +60,13 @@ type InsertOrganizationMember struct {
 	OrganizationID string
 	UserID         string
 	Role           string
+}
+
+// UpdateOrganization changes the organization with ID. Unset fields are left
+// as they are.
+type UpdateOrganization struct {
+	ID   string
+	Name null.String
 }
 
 // QueryFilterOrganization narrows Organizations. Unset fields do not filter.

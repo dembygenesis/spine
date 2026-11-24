@@ -1,8 +1,10 @@
 package org
 
-// Route paths for the org domain, in net/http's {param} syntax. Tests build
-// URLs from these, never from inline strings.
+// Route paths for the org domain. Tests build URLs from these, never from
+// inline strings.
 const (
 	PathOrganizations = "/organizations"
-	PathOrganization  = "/organizations/{id}"
+	// PathOrganization is the caller's current organization, named by the
+	// X-Organization-Id header rather than the URL.
+	PathOrganization = "/organization"
 )

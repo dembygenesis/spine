@@ -4,6 +4,7 @@ package org
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 
@@ -68,6 +69,30 @@ func (s *Store) Insert(ctx context.Context, ex pg.Executor, in model.InsertOrgan
 			return nil, model.ErrOrganizationNameTaken
 		}
 		return nil, fmt.Errorf("insert organization: %w", err)
+	}
+	return &out, nil
+}
+
+// Update changes the fields set in in, and returns the updated row.
+func (s *Store) Update(ctx context.Context, ex pg.Executor, in model.UpdateOrganization) (*model.Organization, error) {
+	q := psql.Update("organizations").Where(sq.Eq{"id": in.ID}).Suffix("RETURNING id, name, created_at")
+	if in.Name.Valid {
+		q = q.Set("name", in.Name.String)
+	}
+	query, args, err := q.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build update: %w", err)
+	}
+
+	var out model.Organization
+	err = sqlx.GetContext(ctx, ex, &out, query, args...)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, model.ErrOrganizationNotFound
+	case isPgCode(err, pgUniqueViolation):
+		return nil, model.ErrOrganizationNameTaken
+	case err != nil:
+		return nil, fmt.Errorf("update organization: %w", err)
 	}
 	return &out, nil
 }

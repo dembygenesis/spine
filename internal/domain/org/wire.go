@@ -7,6 +7,7 @@ import (
 	"github.com/dembygenesis/spine/internal/api"
 	"github.com/dembygenesis/spine/internal/model"
 	"github.com/dembygenesis/spine/pkg/apierr"
+	"github.com/dembygenesis/spine/pkg/auth"
 	"github.com/dembygenesis/spine/pkg/pg"
 )
 
@@ -25,6 +26,10 @@ func Register(mux *api.Mux, transactor *pg.Transactor) error {
 		m.Register(model.ErrOrganizationNameTaken, http.StatusConflict, apierr.CodeConflict)
 		m.Register(model.ErrUserNotFound, http.StatusUnprocessableEntity, apierr.CodeValidation)
 	})
-	registerHumaRoutes(mux.HumaAPI(), &humaHandlers{biz: biz, mux: mux})
+	registerHumaRoutes(mux.HumaAPI(), &humaHandlers{biz: biz, mux: mux}, routeGates{
+		auth:  mux.MwAuth(),
+		read:  mux.MwCan(model.ResourceOrganization, auth.ActionRead),
+		write: mux.MwCan(model.ResourceOrganization, auth.ActionWrite),
+	})
 	return nil
 }
