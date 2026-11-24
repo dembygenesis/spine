@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
 
 	"github.com/dembygenesis/spine/pkg/apierr"
 	"github.com/dembygenesis/spine/pkg/observe"
@@ -14,32 +15,82 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 )
 
-// Mux owns the router, the Huma API registered on it, and the error mapper
-// every domain adds its errors to.
-type Mux struct {
-	router *http.ServeMux
-	huma   huma.API
-	mapper *apierr.Mapper
-	logger observe.Logger
+// auther turns an Authorization header into a user id.
+type auther interface {
+	Authenticate(bearer string) (string, error)
 }
 
-// NewParams are the Mux's dependencies.
+// accessResolver reads the caller's role in an organization from storage.
+type accessResolver interface {
+	Role(ctx context.Context, userID, orgID string) (string, error)
+}
+
+// permitter answers whether a role may act on a resource.
+type permitter interface {
+	Can(role, resource, action string) bool
+}
+
+// Mux owns the router, the Huma API registered on it, the error mapper every
+// domain adds its errors to, and the gates routes are put behind.
+type Mux struct {
+	router  *http.ServeMux
+	huma    huma.API
+	mapper  *apierr.Mapper
+	logger  observe.Logger
+	auther  auther
+	access  accessResolver
+	catalog permitter
+	gated   map[PermissionPair]struct{}
+}
+
+// NewParams are the Mux's dependencies, all required.
 type NewParams struct {
-	Logger observe.Logger
+	Logger  observe.Logger
+	Auther  auther
+	Access  accessResolver
+	Catalog permitter
 }
 
 // New builds a Mux with the OpenAPI document named "spine".
 func New(p NewParams) (*Mux, error) {
-	if p.Logger == nil {
+	switch {
+	case p.Logger == nil:
 		return nil, errors.New("api: logger is required")
+	case p.Auther == nil:
+		return nil, errors.New("api: auther is required")
+	case p.Access == nil:
+		return nil, errors.New("api: access resolver is required")
+	case p.Catalog == nil:
+		return nil, errors.New("api: permission catalog is required")
 	}
 	router := http.NewServeMux()
 	return &Mux{
-		router: router,
-		huma:   humago.New(router, huma.DefaultConfig("spine", "0.1.0")),
-		mapper: apierr.NewMapper(),
-		logger: p.Logger,
+		router:  router,
+		huma:    humago.New(router, huma.DefaultConfig("spine", "0.1.0")),
+		mapper:  apierr.NewMapper(),
+		logger:  p.Logger,
+		auther:  p.Auther,
+		access:  p.Access,
+		catalog: p.Catalog,
+		gated:   map[PermissionPair]struct{}{},
 	}, nil
+}
+
+// PermissionPair is one (resource, action) a route is gated on.
+type PermissionPair struct {
+	Resource string
+	Action   string
+}
+
+// GatedPermissions lists every pair a registered route demands, so a test can
+// prove each one exists in the catalog.
+func (m *Mux) GatedPermissions() []PermissionPair {
+	out := make([]PermissionPair, 0, len(m.gated))
+	for p := range m.gated {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Resource+out[i].Action < out[j].Resource+out[j].Action })
+	return out
 }
 
 // HumaAPI is where domains register their operations.
