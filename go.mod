@@ -10,6 +10,7 @@ require (
 	github.com/lib/pq v1.11.2
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.40.0
+	gopkg.in/guregu/null.v4 v4.0.0
 )
 
 require (
